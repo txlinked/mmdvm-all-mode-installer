@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0-rc2",
+  "version": "0.1.0-rc3",
   "target": "debian13-amd64",
   "dashboard": {
     "repo": "txlinked/mmod",
@@ -38,6 +38,12 @@
     {
       "repo": "DAPNETGateway",
       "commit": "b869053a8046f6791d5bbb83fdae4f9e967f75e7"
+    },
+    {
+      "repo": "MMDVM_CM",
+      "url": "https://github.com/juribeparada/MMDVM_CM.git",
+      "commit": "7328c9e9532d29cf4d9d7d24541d57f825207be4",
+      "patch": "patches/patch-dmr2ysf.py"
     }
   ],
   "programs": [
@@ -112,6 +118,14 @@
       "config": "ircDDBGateway/ircddbgateway-emptyconfig",
       "config_name": "ircddbgateway",
       "service": "ircddbgateway"
+    },
+    {
+      "repo": "MMDVM_CM",
+      "name": "DMR2YSF",
+      "binary": "DMR2YSF/DMR2YSF",
+      "config": "DMR2YSF/DMR2YSF.ini",
+      "config_name": "DMR2YSF.ini",
+      "service": "dmr2ysf"
     }
   ]
 }

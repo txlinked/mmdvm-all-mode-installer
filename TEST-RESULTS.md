@@ -33,3 +33,9 @@ A clean-OS installation and installation on the user's later server have not bee
 TCP 8000 firewall rules for the LAN and ZeroTier subnets were not applied. Automatic approval review rejected those persistent access changes; explicit user approval remains pending. Local HTTP checks were performed through SSH.
 
 The original dashboard installer requires a radio log even on a fresh station and rejects its own secondary-IP proxy during reinstalls. The separate stack installer handles these conditions, verifies the unchanged dashboard/configuration, and restores the dashboard proxy. It does not alter the dashboard code.
+
+## 0.1.0-rc3 cross-mode regression checks
+
+Pinned MMDVM_CM commit 7328c9e9532d29cf4d9d7d24541d57f825207be4. Native converter control checks passed for FCS00334, YSF room selection, same-room caching, unlink/relink, command failure and exactly 600 seconds of RF inactivity. The actual conversion objects preserved all voice bits in a 120-frame DMR/YSF/DMR roundtrip. Configuration tests passed for broad BM rewrites and PassAllTG2, protecting TS1, CBridge TS2/TG3148, station identity, frequencies and passwords; an occupied enabled Network 5 was refused. Dashboard archive SHA256 remains ec2b94ab4faffda46201eafe60fb1a1630f376ce106fe1f41d7d859d9f008fbf.
+
+These checks do not establish audible end-to-end Texas Nexus operation; the release remains a prerelease pending live radio confirmation.

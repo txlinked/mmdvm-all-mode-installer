@@ -54,13 +54,15 @@ for path in /etc/mmod-radio /opt/mmod-radio /etc/mmod; do
   fi
 done
 apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libmosquitto1 mosquitto libwxbase3.2-1t64 python3 python3-venv curl ca-certificates iproute2
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libmosquitto1 mosquitto mosquitto-clients libwxbase3.2-1t64 python3 python3-venv curl ca-certificates iproute2
 id mmdvm >/dev/null 2>&1 || useradd --system --home /var/lib/mmod-radio --shell /usr/sbin/nologin mmdvm
 usermod -a -G dialout mmdvm
 install -d -m 755 /opt/mmod-radio/bin /opt/mmod-radio/data /etc/mmod-radio
 install -d -m 750 -o mmdvm -g mmdvm /var/lib/mmod-radio /var/log/mmod-radio
+install -m 755 configure-dmr2ysf.py /usr/local/sbin/mmod-configure-dmr2ysf
 install -m 755 bin/* /opt/mmod-radio/bin/
-cp -a data/. /opt/mmod-radio/data/
+# Keep station-owned room maps, ID additions and reflector directories on upgrade.
+cp -an data/. /opt/mmod-radio/data/
 install -m 644 manifest.json /opt/mmod-radio/manifest.json
 export MMOD_STACK_BACKUP="$backup"
 python3 - <<'PY'
@@ -79,6 +81,18 @@ for p in manifest['programs']:
             if 'Log' in c:
                 c['Log']['DisplayLevel']='1'
                 if 'FilePath' in c['Log']:c['Log']['FilePath']='/var/log/mmod-radio'
+            if p['name']=='DMR2YSF':
+                for section,values in {
+                    'YSF Network':{'GatewayAddress':'127.0.0.1','GatewayPort':'4200','LocalAddress':'127.0.0.1','LocalPort':'3200','FCSRooms':'/opt/mmod-radio/data/YSFGateway/FCSRooms.txt','DT1':'1,34,97,95,43,3,17,0,0,0','DT2':'0,0,0,0,108,32,28,32,3,8'},
+                    'DMR Network':{'RptAddress':'127.0.0.1','RptPort':'62034','LocalAddress':'127.0.0.1','LocalPort':'62033','DefaultDstTG':'100334','TGListFile':'/opt/mmod-radio/data/DMR2YSF/TG-YSFList.txt'},
+                    'DMR Id Lookup':{'File':'/opt/mmod-radio/data/DMR2YSF/DMRIds.dat'},
+                    'Log':{'FilePath':'/var/log/mmod-radio','FileRoot':'DMR2YSF'},
+                }.items():
+                    if section not in c:c[section]={}
+                    c[section].update(values)
+            if p['name']=='YSFGateway':
+                c['YSF Network']['Hosts']='/var/lib/mmod-radio/YSFHosts.json'
+                c['FCS Network']['Rooms']='/opt/mmod-radio/data/YSFGateway/FCSRooms.txt'
             with target.open('w') as f:c.write(f,space_around_delimiters=False)
     target.chmod(0o640);shutil.chown(target,user='root',group='mmdvm')
     unit=units/(p['service']+'.service')
@@ -87,8 +101,14 @@ for p in manifest['programs']:
     if p['name']=='ircddbgatewayd':command='/opt/mmod-radio/bin/ircddbgatewayd -foreground -confdir /etc/mmod-radio -logdir /var/log/mmod-radio'
     unit.write_text('[Unit]\n# Managed by MMOD stack installer\nDescription=MMOD '+p['name']+'\nAfter=network-online.target mosquitto.service\nWants=network-online.target\nConditionPathExists=/etc/mmod-radio/station-ready\n\n[Service]\nType=simple\nUser=mmdvm\nGroup=mmdvm\nSupplementaryGroups=dialout\nWorkingDirectory=/opt/mmod-radio/data/'+p['name']+'\nExecStart='+command+'\nRestart=on-failure\nRestartSec=5\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nReadWritePaths=/var/log/mmod-radio /var/lib/mmod-radio\nUMask=0027\n\n[Install]\nWantedBy=multi-user.target\n')
 PY
+# Current YSFGateway opens its JSON directory read/write, even when loading.
+if [[ ! -e /var/lib/mmod-radio/YSFHosts.json ]]; then
+  printf '{"reflectors":[]}\n' > /var/lib/mmod-radio/YSFHosts.json
+  chown mmdvm:mmdvm /var/lib/mmod-radio/YSFHosts.json
+  chmod 640 /var/lib/mmod-radio/YSFHosts.json
+fi
 systemctl daemon-reload
-systemd-analyze verify /etc/systemd/system/{mmdvmhost,dmrgateway,ysfgateway,dgidgateway,p25gateway,nxdngateway,m17gateway,dapnetgateway,ircddbgateway}.service
+systemd-analyze verify /etc/systemd/system/{mmdvmhost,dmrgateway,ysfgateway,dgidgateway,p25gateway,nxdngateway,m17gateway,dapnetgateway,ircddbgateway,dmr2ysf}.service
 stage=$(mktemp -d /tmp/mmod-dashboard.XXXXXXXX)
 proxy_restore=0
 cleanup_dashboard_stage() {
@@ -125,4 +145,5 @@ PY
 systemctl restart mmod mmod-collector.service
 echo "Dashboard installed: http://$bind:$port"
 echo "Radio binaries installed; station configuration required. Backup: $backup"
+echo 'DMR to Texas Nexus: review sudo mmod-configure-dmr2ysf, then run with --apply.'
 echo 'See STATION-SETUP.md before creating /etc/mmod-radio/station-ready.'

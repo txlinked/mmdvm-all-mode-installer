@@ -4,7 +4,7 @@ Reference target: Dell Wyse 3040 running Debian 13 amd64. The same release targe
 
 This separate project packages g4klx radio programs with the existing [txlinked/mmod](https://github.com/txlinked/mmod) dashboard. Dashboard Python files and UI assets are shipped unchanged. `manifest.json` pins upstream commits and the dashboard archive checksum.
 
-Included: MMDVM-Host, DMRGateway, YSFGateway, DGIdGateway, P25Gateway, NXDNGateway, M17Gateway, DAPNETGateway and ircddbgatewayd. See [station setup](STATION-SETUP.md) for mode and hardware requirements.
+Included: MMDVM-Host, DMRGateway, YSFGateway, DGIdGateway, P25Gateway, NXDNGateway, M17Gateway, DAPNETGateway, ircddbgatewayd and DMR2YSF. See [station setup](STATION-SETUP.md) for mode and hardware requirements.
 
 The stack includes a local Mosquitto broker for current upstream MQTT dependencies. The unchanged dashboard reads console logs; it does not need a rewritten MQTT UI. Reflector directory provisioning, callsign/ID, network credentials and hardware calibration remain station setup tasks.
 
@@ -15,7 +15,7 @@ Download the `mmod-stack-VERSION-debian13-amd64.tar.gz` release asset and its `S
 ```bash
 sha256sum --ignore-missing --check SHA256SUMS
 mkdir mmod-stack
-tar -xzf mmod-stack-0.1.0-rc2-debian13-amd64.tar.gz -C mmod-stack
+tar -xzf mmod-stack-0.1.0-rc3-debian13-amd64.tar.gz -C mmod-stack
 cd mmod-stack
 sudo bash install.sh --bind YOUR_LOCAL_IP --site 'Your Repeater'
 ```
@@ -31,7 +31,7 @@ On Debian 13 amd64:
 ```bash
 sudo apt-get install build-essential git libmosquitto-dev libwxgtk3.2-dev nlohmann-json3-dev python3
 bash build.sh
-bash verify.sh work/build-0.1.0-rc2/bundle
+bash verify.sh work/build-0.1.0-rc3/bundle
 ```
 
 The GitHub workflow builds pinned sources and runs executable checks. A matching `vVERSION` tag publishes a prerelease containing binaries, checksums, and the corresponding upstream source archive for GPL compliance. Workflow dispatch provides downloadable build artifacts without publishing. The initial package remains a prerelease until modem and over-the-air tests pass.
@@ -42,3 +42,22 @@ Installer scripts use the MIT license. The bundled g4klx programs retain their G
 
 ## Recovered configuration
 MMOD V2.0.5 restores Administration → Configuration for station, modem, frequencies, modes and gateway settings. Existing values and passwords are preserved. Review and Save create a backup; Apply restarts only affected running services.
+
+## DMR to YSF/FCS on TS2
+
+DMR2YSF is prebuilt from pinned juribeparada/MMDVM_CM sources with the working Waco native MQTT room-linking approach. No compiler runs during installation. After setting your station callsign and DMR ID, review and apply:
+
+```bash
+sudo mmod-configure-dmr2ysf
+sudo mmod-configure-dmr2ysf --apply
+sudo touch /etc/mmod-radio/station-ready
+sudo systemctl enable --now mosquitto
+sudo systemctl restart ysfgateway dmrgateway dmr2ysf
+sudo systemctl enable ysfgateway dmrgateway dmr2ysf
+```
+
+TS2 TG7100334 maps to converter TG100334 and FCS00334 (TEXAS-NEXUS). Return traffic gets the 7000000 prefix back. TS2 TG7100000–7199999 selects FCS rooms; TG7200000–7299999 selects YSF rooms from your provisioned directory. TG7004000 unlinks. The helper reserves TG7000000–7999998 from other TS2 networks, retains TS1 and existing CBridge routes such as TG3148, preserves network passwords and modem frequencies, and backs up edited files. It refuses an occupied enabled Network 5.
+
+After 10 minutes without local RF, the room unlinks and the converter stays on standby. Keying the same room again sends a new link command. A command submission is not proof of a remote link: check YSFGateway logs for `Linked to FCS003-34`, then verify audio with radios. This release remains a prerelease while that audio test is pending.
+
+On upgrades the installer preserves existing INI files. Run the helper explicitly to adopt this routing. Do not run the cross-mode YSFGateway and a native YSF modem gateway on the same local ports. The dashboard payload and appearance are unchanged.
