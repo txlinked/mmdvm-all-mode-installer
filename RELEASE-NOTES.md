@@ -1,0 +1,1 @@
+Initial Debian 13 amd64 test release for Dell Wyse 3040 and other x86_64 systems. Prebuilt radio host and gateways plus the unchanged MMOD dashboard. Configurations are preserved and radio activation requires station setup. Modem and RF validation are pending; M17 needs a separate compatible host path. This is a prerelease.

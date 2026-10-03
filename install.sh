@@ -1,0 +1,128 @@
+#!/bin/bash
+# Install a previously built release. No compiler or source build is used.
+set -euo pipefail
+cd "$(dirname "$0")"
+if [[ ${1:-} == --help ]]; then
+  echo 'sudo bash install.sh --bind LOCAL_IPV4 [--port 8000] [--site NAME] [--ini EXISTING_INI]'
+  echo 'Debian 13 amd64. Radio services remain stopped until station setup is complete.'
+  exit 0
+fi
+[[ $(id -u) == 0 ]] || { echo 'Run as root'; exit 1; }
+. /etc/os-release
+[[ -d /run/systemd/system ]] || { echo 'Boot Debian with systemd before installation.'; exit 1; }
+[[ $ID == debian && $VERSION_ID == 13 && $(dpkg --print-architecture) == amd64 ]] || {
+  echo 'This release requires Debian 13 amd64 (Dell Wyse 3040 or other x86_64 PC).'; exit 1;
+}
+sha256sum --check --strict SHA256SUMS
+bind= port=8000 site='MMOD Test Repeater' ini=
+while (($#)); do
+  case $1 in
+    --bind) bind=$2;; --port) port=$2;; --site) site=$2;; --ini) ini=$2;;
+    *) echo "Unknown option: $1" >&2; exit 1;;
+  esac
+  shift 2
+done
+[[ -n $bind ]] || { echo 'Supply --bind with a local IPv4 address'; exit 1; }
+if ! command -v python3 >/dev/null || ! command -v ip >/dev/null; then
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 iproute2
+fi
+python3 - "$bind" "$port" "$ini" <<'PY'
+import ipaddress,sys,json,subprocess,pathlib
+a=ipaddress.IPv4Address(sys.argv[1]);p=int(sys.argv[2]);assert not a.is_unspecified and not a.is_multicast and 1024<=p<=65535
+interfaces=json.loads(subprocess.check_output(['ip','-j','-4','addr'],text=True))
+assert any(x.get('local')==str(a) for i in interfaces for x in i.get('addr_info',[])), 'Bind IP is not local'
+if sys.argv[3]:assert pathlib.Path(sys.argv[3]).is_file() and pathlib.Path(sys.argv[3]).is_absolute()
+PY
+# Refuse to replace a running radio stack or existing unmanaged unit.
+python3 - <<'PY'
+import json,subprocess,pathlib
+for p in json.load(open('manifest.json'))['programs']:
+    unit=p['service']+'.service'
+    if subprocess.run(['systemctl','is-active','--quiet',unit]).returncode==0:raise SystemExit('Stop '+unit+' before upgrading')
+    fragment=subprocess.run(['systemctl','show',unit,'--property=FragmentPath','--value'],capture_output=True,text=True).stdout.strip()
+    f=pathlib.Path(fragment) if fragment else pathlib.Path('/etc/systemd/system')/unit
+    if f.exists() and 'Managed by MMOD stack installer' not in f.read_text():raise SystemExit('Unmanaged service exists: '+unit)
+PY
+stamp=$(date -u +%Y%m%dT%H%M%S)-$$
+backup=/var/backups/mmod-stack-$stamp
+install -d -m 700 "$backup"
+for path in /etc/mmod-radio /opt/mmod-radio /etc/mmod; do
+  if [[ -e $path ]]; then
+    name=${path#/}; name=${name//\//-}
+    tar -czf "$backup/$name.tar.gz" -C / "${path#/}"
+  fi
+done
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libmosquitto1 mosquitto libwxbase3.2-1t64 python3 python3-venv curl ca-certificates iproute2
+id mmdvm >/dev/null 2>&1 || useradd --system --home /var/lib/mmod-radio --shell /usr/sbin/nologin mmdvm
+usermod -a -G dialout mmdvm
+install -d -m 755 /opt/mmod-radio/bin /opt/mmod-radio/data /etc/mmod-radio
+install -d -m 750 -o mmdvm -g mmdvm /var/lib/mmod-radio /var/log/mmod-radio
+install -m 755 bin/* /opt/mmod-radio/bin/
+cp -a data/. /opt/mmod-radio/data/
+install -m 644 manifest.json /opt/mmod-radio/manifest.json
+export MMOD_STACK_BACKUP="$backup"
+python3 - <<'PY'
+import json,pathlib,shutil,configparser,os
+manifest=json.load(open('manifest.json'));cfg=pathlib.Path('/etc/mmod-radio');units=pathlib.Path('/etc/systemd/system')
+for p in manifest['programs']:
+    target=cfg/p['config_name']
+    if not target.exists():
+        shutil.copy2(pathlib.Path('config')/p['config_name'],target)
+        if p['name']!='ircddbgatewayd':
+            c=configparser.ConfigParser(interpolation=None,strict=False);c.optionxform=str;c.read(target)
+            for section in c.sections():
+                for key in list(c[section]):
+                    if key.lower() in ('enable','enabled','daemon'):c[section][key]='0'
+            if p['name']=='MMDVM-Host':c['Modem']['Protocol']='null'
+            if 'Log' in c:
+                c['Log']['DisplayLevel']='1'
+                if 'FilePath' in c['Log']:c['Log']['FilePath']='/var/log/mmod-radio'
+            with target.open('w') as f:c.write(f,space_around_delimiters=False)
+    target.chmod(0o640);shutil.chown(target,user='root',group='mmdvm')
+    unit=units/(p['service']+'.service')
+    if unit.exists():shutil.copy2(unit,pathlib.Path(os.environ['MMOD_STACK_BACKUP'])/unit.name)
+    command='/opt/mmod-radio/bin/'+p['name']+' '+str(target)
+    if p['name']=='ircddbgatewayd':command='/opt/mmod-radio/bin/ircddbgatewayd -foreground -confdir /etc/mmod-radio -logdir /var/log/mmod-radio'
+    unit.write_text('[Unit]\n# Managed by MMOD stack installer\nDescription=MMOD '+p['name']+'\nAfter=network-online.target mosquitto.service\nWants=network-online.target\nConditionPathExists=/etc/mmod-radio/station-ready\n\n[Service]\nType=simple\nUser=mmdvm\nGroup=mmdvm\nSupplementaryGroups=dialout\nWorkingDirectory=/opt/mmod-radio/data/'+p['name']+'\nExecStart='+command+'\nRestart=on-failure\nRestartSec=5\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nReadWritePaths=/var/log/mmod-radio /var/lib/mmod-radio\nUMask=0027\n\n[Install]\nWantedBy=multi-user.target\n')
+PY
+systemctl daemon-reload
+systemd-analyze verify /etc/systemd/system/{mmdvmhost,dmrgateway,ysfgateway,dgidgateway,p25gateway,nxdngateway,m17gateway,dapnetgateway,ircddbgateway}.service
+stage=$(mktemp -d /tmp/mmod-dashboard.XXXXXXXX)
+proxy_restore=0
+cleanup_dashboard_stage() {
+  if ((proxy_restore)); then systemctl start mmod-network.socket || true; fi
+  case "$stage" in /tmp/mmod-dashboard.*) rm -rf -- "$stage";; esac
+}
+trap cleanup_dashboard_stage EXIT
+tar -xzf mmod-source.tar.gz -C "$stage"
+# Run the original MMOD installer, without modifying dashboard source or assets.
+[[ -n $ini ]] || ini=/etc/mmod-radio/MMDVM.ini
+# Upstream's port check sees its own secondary-IP proxy as a conflicting process.
+# Briefly stop only that dashboard socket and restore it on every exit path.
+if systemctl is-active --quiet mmod-network.socket || systemctl is-active --quiet mmod-network.service; then
+  proxy_restore=1
+  systemctl stop mmod-network.service mmod-network.socket
+fi
+if bash "$stage/mmod/install.sh" --bind "$bind" --port "$port" --site "$site" --ini "$ini" --host-service mmdvmhost.service 2>&1 | tee "$backup/dashboard-install.log"; then
+  echo 'Original dashboard installer passed.'
+else
+  # Upstream requires an active radio log even on a fresh dashboard installation.
+  # Accept only its exact no-log postcheck after verifying source, UI and configs.
+  python3 accept-idle-dashboard.py "$backup/dashboard-install.log" "$stage/mmod" "http://$bind:$port"
+  python3 /opt/mmod/link_status.py --prepare-access
+  systemctl daemon-reload
+  systemctl enable --now mmod-updates.timer
+fi
+python3 - <<'PY'
+import json,pathlib
+p=pathlib.Path('/etc/mmod/config.json');c=json.loads(p.read_text());m=json.load(open('manifest.json'))
+c['services']=list(dict.fromkeys(c['services']+[x['service']+'.service' for x in m['programs']]))
+c['backup_files']=list(dict.fromkeys(c['backup_files']+['/etc/mmod-radio/'+x['config_name'] for x in m['programs']]))
+p.write_text(json.dumps(c,indent=2)+'\n')
+PY
+systemctl restart mmod mmod-collector.service
+echo "Dashboard installed: http://$bind:$port"
+echo "Radio binaries installed; station configuration required. Backup: $backup"
+echo 'See STATION-SETUP.md before creating /etc/mmod-radio/station-ready.'

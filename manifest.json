@@ -1,0 +1,117 @@
+{
+  "version": "0.1.0-rc1",
+  "target": "debian13-amd64",
+  "dashboard": {
+    "repo": "txlinked/mmod",
+    "commit": "d4f144ed45097b7e975540d8d63ed82fa38a2bf1",
+    "sha256": "5a41fceda594277db80c45bd22e1ee1b5ee0a57d2820f8c5fd60aa012e2141cd"
+  },
+  "upstream": [
+    {
+      "repo": "MMDVM-Host",
+      "commit": "590c531391dfd3146073afbc3956f70d42c62a46"
+    },
+    {
+      "repo": "DMRGateway",
+      "commit": "2a3306de313cf4c094c2031c9ced5a6858bbbfcc"
+    },
+    {
+      "repo": "YSFClients",
+      "commit": "a71e33aaed25a93e8c2bb2d87fc5fb7491e72fe7"
+    },
+    {
+      "repo": "P25Clients",
+      "commit": "3c5fb387c4e2d676a7c79069d2bb3541473b0528"
+    },
+    {
+      "repo": "NXDNClients",
+      "commit": "8950677e9876e577fb87b955cfa93bacd059209d"
+    },
+    {
+      "repo": "M17Gateway",
+      "commit": "c72b989248b14005215469aa24eccc120b46efaa"
+    },
+    {
+      "repo": "ircDDBGateway",
+      "commit": "f5ab9f7c93c6f28147b84a8f9667f6cc4c027eaa"
+    },
+    {
+      "repo": "DAPNETGateway",
+      "commit": "b869053a8046f6791d5bbb83fdae4f9e967f75e7"
+    }
+  ],
+  "programs": [
+    {
+      "repo": "MMDVM-Host",
+      "name": "MMDVM-Host",
+      "binary": "MMDVM-Host",
+      "config": "MMDVM-Host.ini",
+      "config_name": "MMDVM.ini",
+      "service": "mmdvmhost"
+    },
+    {
+      "repo": "DMRGateway",
+      "name": "DMRGateway",
+      "binary": "DMRGateway",
+      "config": "DMRGateway.ini",
+      "config_name": "DMRGateway.ini",
+      "service": "dmrgateway"
+    },
+    {
+      "repo": "YSFClients",
+      "name": "YSFGateway",
+      "binary": "YSFGateway/YSFGateway",
+      "config": "YSFGateway/YSFGateway.ini",
+      "config_name": "YSFGateway.ini",
+      "service": "ysfgateway"
+    },
+    {
+      "repo": "YSFClients",
+      "name": "DGIdGateway",
+      "binary": "DGIdGateway/DGIdGateway",
+      "config": "DGIdGateway/DGIdGateway.ini",
+      "config_name": "DGIdGateway.ini",
+      "service": "dgidgateway"
+    },
+    {
+      "repo": "P25Clients",
+      "name": "P25Gateway",
+      "binary": "P25Gateway/P25Gateway",
+      "config": "P25Gateway/P25Gateway.ini",
+      "config_name": "P25Gateway.ini",
+      "service": "p25gateway"
+    },
+    {
+      "repo": "NXDNClients",
+      "name": "NXDNGateway",
+      "binary": "NXDNGateway/NXDNGateway",
+      "config": "NXDNGateway/NXDNGateway.ini",
+      "config_name": "NXDNGateway.ini",
+      "service": "nxdngateway"
+    },
+    {
+      "repo": "M17Gateway",
+      "name": "M17Gateway",
+      "binary": "M17Gateway",
+      "config": "M17Gateway.ini",
+      "config_name": "M17Gateway.ini",
+      "service": "m17gateway"
+    },
+    {
+      "repo": "DAPNETGateway",
+      "name": "DAPNETGateway",
+      "binary": "DAPNETGateway",
+      "config": "DAPNETGateway.ini",
+      "config_name": "DAPNETGateway.ini",
+      "service": "dapnetgateway"
+    },
+    {
+      "repo": "ircDDBGateway",
+      "name": "ircddbgatewayd",
+      "binary": "ircDDBGateway/ircddbgatewayd",
+      "config": "ircDDBGateway/ircddbgateway-emptyconfig",
+      "config_name": "ircddbgateway",
+      "service": "ircddbgateway"
+    }
+  ]
+}
