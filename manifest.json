@@ -1,10 +1,10 @@
 {
-  "version": "0.1.0-rc1",
+  "version": "0.1.0-rc2",
   "target": "debian13-amd64",
   "dashboard": {
     "repo": "txlinked/mmod",
-    "commit": "d4f144ed45097b7e975540d8d63ed82fa38a2bf1",
-    "sha256": "5a41fceda594277db80c45bd22e1ee1b5ee0a57d2820f8c5fd60aa012e2141cd"
+    "commit": "0e301ec01af87fcd4ad04aa65171234f1ed8616a",
+    "sha256": "ec2b94ab4faffda46201eafe60fb1a1630f376ce106fe1f41d7d859d9f008fbf"
   },
   "upstream": [
     {

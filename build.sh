@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 [[ $(dpkg --print-architecture) == amd64 ]] || { echo 'Build requires amd64'; exit 1; }
-version=${1:-0.1.0-rc1}
+version=${1:-0.1.0-rc2}
 [[ $version =~ ^[0-9A-Za-z.+-]+$ ]] || exit 1
 stage="$PWD/work/build-$version"
 mkdir -p "$stage/src" "$stage/bundle/bin" "$stage/bundle/config" "$stage/bundle/data" "$stage/bundle/licenses" dist
