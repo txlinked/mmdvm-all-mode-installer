@@ -1,0 +1,39 @@
+name: Build and test Debian 13 amd64 release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container: debian:13
+    steps:
+      - name: Install release build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git build-essential libmosquitto-dev libwxgtk3.2-dev nlohmann-json3-dev python3 curl gh
+      - uses: actions/checkout@v4
+      - name: Build pinned sources once
+        run: bash build.sh "$(cat VERSION)"
+      - name: Verify release binaries and source hashes
+        run: bash verify.sh work/build-$(cat VERSION)/bundle
+      - name: Save tested packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmod-debian13-amd64
+          path: dist/*
+      - name: Publish tagged prerelease
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          test "$RELEASE_TAG" = "v$(cat VERSION)"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/* --verify-tag --prerelease --title "MMOD stack $(cat VERSION)" --notes-file RELEASE-NOTES.md
+          fi
