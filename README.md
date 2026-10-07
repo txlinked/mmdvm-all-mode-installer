@@ -41,7 +41,7 @@ Runtime binaries are stored under `/opt/mmod-radio`; station configuration is un
 Installer scripts use the MIT license. The bundled g4klx programs retain their GPL licenses and are accompanied by the corresponding source release asset. The dashboard retains its original license.
 
 ## Recovered configuration
-MMOD V2.0.5 restores Administration Ã¢â€ â€™ Configuration for station, modem, frequencies, modes and gateway settings. Existing values and passwords are preserved. Review and Save create a backup; Apply restarts only affected running services.
+MMOD V2.0.5 restores Administration → Configuration for station, modem, frequencies, modes and gateway settings. Existing values and passwords are preserved. Review and Save create a backup; Apply restarts only affected running services.
 
 ## DMR to YSF/FCS on TS2
 
@@ -56,7 +56,7 @@ sudo systemctl restart ysfgateway dmrgateway dmr2ysf
 sudo systemctl enable ysfgateway dmrgateway dmr2ysf
 ```
 
-TS2 TG7100334 maps to converter TG100334 and FCS00334 (TEXAS-NEXUS). Return traffic gets the 7000000 prefix back. TS2 TG7100000Ã¢â‚¬â€œ7199999 selects FCS rooms; TG7200000Ã¢â‚¬â€œ7299999 selects YSF rooms from your provisioned directory. TG7004000 unlinks. The helper reserves TG7000000Ã¢â‚¬â€œ7999998 from other TS2 networks, retains TS1 and existing CBridge routes such as TG3148, preserves network passwords and modem frequencies, and backs up edited files. It refuses an occupied enabled Network 5.
+TS2 TG7100334 maps to converter TG100334 and FCS00334 (TEXAS-NEXUS). Return traffic gets the 7000000 prefix back. TS2 TG7100000–7199999 selects FCS rooms; TG7200000–7299999 selects YSF rooms from your provisioned directory. TG7004000 unlinks. The helper reserves TG7000000–7999998 from other TS2 networks, retains TS1 and existing CBridge routes such as TG3148, preserves network passwords and modem frequencies, and backs up edited files. It refuses an occupied enabled Network 5.
 
 Room auto-disconnect is selectable in the dashboard after login: expand Auto-disconnect beside a linked YSF/FCS room and set Enable plus 1–1440 RF-inactivity minutes. BrandMeister uses a whole-timeslot dynamic timer because its disconnect command clears the slot. Administration contains the global timer enable switch and default (10 minutes for a fresh full-stack install). Static links and AllStar are exempt. Existing timer settings are preserved. The full installer removes the converter's independent timer so it cannot override dashboard Off/static selections. Keying the same room again sends a new link command. A command submission is not proof of a remote link: check YSFGateway logs for `Linked to FCS003-34`, then verify audio with radios. This release remains a prerelease while that audio test is pending.
 

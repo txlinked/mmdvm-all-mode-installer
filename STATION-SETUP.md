@@ -29,7 +29,7 @@ sudo systemctl restart ysfgateway dmrgateway dmr2ysf
 sudo systemctl enable ysfgateway dmrgateway dmr2ysf
 ```
 
-TS2 TG7100334 maps to converter TG100334 and FCS00334 (TEXAS-NEXUS). Return traffic gets the 7000000 prefix back. TS2 TG7100000â€“7199999 selects FCS rooms; TG7200000â€“7299999 selects YSF rooms from your provisioned directory. TG7004000 unlinks. The helper reserves TG7000000â€“7999998 from other TS2 networks, retains TS1 and existing CBridge routes such as TG3148, preserves network passwords and modem frequencies, and backs up edited files. It refuses an occupied enabled Network 5.
+TS2 TG7100334 maps to converter TG100334 and FCS00334 (TEXAS-NEXUS). Return traffic gets the 7000000 prefix back. TS2 TG7100000–7199999 selects FCS rooms; TG7200000–7299999 selects YSF rooms from your provisioned directory. TG7004000 unlinks. The helper reserves TG7000000–7999998 from other TS2 networks, retains TS1 and existing CBridge routes such as TG3148, preserves network passwords and modem frequencies, and backs up edited files. It refuses an occupied enabled Network 5.
 
 Use the dashboard Auto-disconnect control beside a supported YSF/FCS room to enable or disable its timer and set RF-inactivity minutes. BrandMeister timers apply to the whole timeslot, because clearing dynamic groups clears that slot. Static links and AllStar are exempt. Administration controls the global enable switch and default minutes. Fresh full-stack installs default to 10 minutes; updates preserve saved choices or the legacy 15-minute dashboard default. Incoming network traffic does not reset RF inactivity.
 

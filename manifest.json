@@ -4,7 +4,7 @@
   "dashboard": {
     "repo": "txlinked/mmod",
     "commit": "5c838d78c59652935a31b2cdbdd428c1cd033e8d",
-    "sha256": "64b807463a5265abd4d25afd01bee59493bebeeb2242d6ab18adc57364eee034",
+    "sha256": "8a416a9c6a728eb429090eaeb2bd3c9343fccd36b6c22f3264ff1def492101b1",
     "bundled_changes": [
       "idle_links.py",
       "network_access.py",
