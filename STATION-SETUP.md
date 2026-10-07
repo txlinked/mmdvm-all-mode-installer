@@ -14,7 +14,7 @@ The installer leaves radio services stopped pending station setup. The test boar
 
 The dashboard retains its existing login and administration behavior. On a fresh installation, the upstream installer sets `admin` / `mmodadmin`; change this in Administration before allowing access from other networks. Existing credentials are preserved. The default web port remains 8000.
 
-If UFW is active, add a rule only for the intended interface and trusted subnet. For this test LAN: `ufw allow in on enp1s0 from 192.168.8.0/24 to 192.168.8.170 port 8000 proto tcp`. A dashboard bound to a ZeroTier address needs an appropriate rule on its ZeroTier interface instead.
+The dashboard listens on all IPv4 interfaces on port 8000. Open `http://<server-IP>:8000/` using the LAN, ZeroTier, or WireGuard/44net address. The installer does not change firewall rules; existing firewall rules must allow the networks you intend to use.
 
 ## DMR to YSF/FCS on TS2
 
@@ -29,8 +29,10 @@ sudo systemctl restart ysfgateway dmrgateway dmr2ysf
 sudo systemctl enable ysfgateway dmrgateway dmr2ysf
 ```
 
-TS2 TG7100334 maps to converter TG100334 and FCS00334 (TEXAS-NEXUS). Return traffic gets the 7000000 prefix back. TS2 TG7100000–7199999 selects FCS rooms; TG7200000–7299999 selects YSF rooms from your provisioned directory. TG7004000 unlinks. The helper reserves TG7000000–7999998 from other TS2 networks, retains TS1 and existing CBridge routes such as TG3148, preserves network passwords and modem frequencies, and backs up edited files. It refuses an occupied enabled Network 5.
+TS2 TG7100334 maps to converter TG100334 and FCS00334 (TEXAS-NEXUS). Return traffic gets the 7000000 prefix back. TS2 TG7100000â€“7199999 selects FCS rooms; TG7200000â€“7299999 selects YSF rooms from your provisioned directory. TG7004000 unlinks. The helper reserves TG7000000â€“7999998 from other TS2 networks, retains TS1 and existing CBridge routes such as TG3148, preserves network passwords and modem frequencies, and backs up edited files. It refuses an occupied enabled Network 5.
 
-After 10 minutes without local RF, the room unlinks and the converter stays on standby. Keying the same room again sends a new link command. A command submission is not proof of a remote link: check YSFGateway logs for `Linked to FCS003-34`, then verify audio with radios. This release remains a prerelease while that audio test is pending.
+Use the dashboard Auto-disconnect control beside a supported YSF/FCS room to enable or disable its timer and set RF-inactivity minutes. BrandMeister timers apply to the whole timeslot, because clearing dynamic groups clears that slot. Static links and AllStar are exempt. Administration controls the global enable switch and default minutes. Fresh full-stack installs default to 10 minutes; updates preserve saved choices or the legacy 15-minute dashboard default. Incoming network traffic does not reset RF inactivity.
 
-On upgrades the installer preserves existing INI files. Run the helper explicitly to adopt this routing. Do not run the cross-mode YSFGateway and a native YSF modem gateway on the same local ports. The dashboard payload and appearance are unchanged.
+The converter has no independent inactivity timer. Running the setup helper preserves dashboard selections; optional `--room-timeout 0` disables the FCS00334 room timer and `--room-timeout 25` selects 25 minutes for that room. The global switch must also be enabled and Static still takes precedence. Keying the same room again sends a new link command. A command submission is not proof of a remote link: check YSFGateway logs for `Linked to FCS003-34`, then verify audio with radios. This release remains a prerelease while that audio test is pending.
+
+On upgrades the installer preserves existing INI files. Run the helper explicitly to adopt this routing. Do not run the cross-mode YSFGateway and a native YSF modem gateway on the same local ports. These bundled dashboard changes apply only to this full-stack package.
