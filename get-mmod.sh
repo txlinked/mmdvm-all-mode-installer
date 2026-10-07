@@ -1,7 +1,7 @@
 #!/bin/bash
 # Download a release; never compile on the destination PC.
 set -euo pipefail
-repo=${1:?Usage: bash get-mmod.sh OWNER/REPO vVERSION --bind LOCAL_IP [install options]}
+repo=${1:?Usage: bash get-mmod.sh OWNER/REPO vVERSION [install options]}
 tag=${2:?Supply release tag}
 shift 2
 [[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && $tag =~ ^v[0-9A-Za-z.+-]+$ ]] || exit 1

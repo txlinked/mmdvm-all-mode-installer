@@ -1,0 +1,240 @@
+--- a/fusion_activity.py
++++ b/fusion_activity.py
+@@ -0,0 +1,21 @@
++"""Native Fusion RF activity from the pinned MMDVM-Host console log."""
++import datetime
++import re
++
++START=re.compile(r'YSF, received RF (?:header|late entry) from\s+(\S+)\s+to DG-ID (\d+)')
++END=re.compile(r'YSF, (?:received RF end of transmission|transmission lost) from\s+(\S+)\s+to (?:DG-ID )?([^,]+), ([\d.]+) seconds')
++
++def snapshot(lines,now,previous=None):
++    state={**(previous or {}),'updated':now}
++    state.setdefault('last_rf',0);state.setdefault('active',False)
++    for line in lines:
++        try:stamp=datetime.datetime.strptime(line[3:26],'%Y-%m-%d %H:%M:%S.%f').replace(tzinfo=datetime.timezone.utc).timestamp()
++        except ValueError:continue
++        if stamp>now+5 or stamp<state['last_rf']:continue
++        match=START.search(line)
++        if match:
++            state.update(last_rf=stamp,active=True,caller=match[1],target=match[2])
++        elif END.search(line) or (state['active'] and ('YSF, RF user has timed out' in line or 'Mode set to Idle' in line)):
++            state.update(last_rf=stamp,active=False)
++    if state['active'] and now-state['last_rf']>180:state['active']=False
++    return state
+--- a/idle_links.py
++++ b/idle_links.py
+@@ -1,4 +1,4 @@
+-"""Expire confirmed temporary links after 15 minutes without local RF activity."""
++"""Expire supported temporary links according to dashboard RF inactivity policy."""
+ import configparser,json,os,time
+ from pathlib import Path
+ LIMIT=900
+@@ -17,19 +17,24 @@
+             if kind=='static' or not dest:continue
+             gateway=kind=='gateway'
+             # Native Fusion needs an RF activity source; DMR-only samples cannot prove it idle.
+-            if gateway and link.get('mode')=='ysf' and not any(r.get('mode') in ('YSF','System Fusion') for r in rows):continue
+-            if gateway and link.get('mode') not in ('dmr2ysf','ysf'):continue
+-            if not gateway and kind!='dynamic':continue
++            native=gateway and link.get('mode')=='ysf'
++            fusion=radio.get('native_ysf',{})
++            if native and not fusion.get('supported'):continue
++            if gateway and (link.get('mode') not in ('dmr2ysf','ysf') or link.get('family') not in ('YSF','FCS')):continue
++            if not gateway and (kind!='dynamic' or link.get('family')!='BrandMeister' or link.get('mode')!='dmr'):continue
+             key='|'.join([str(slot or 2),link.get('family',''),dest])
+             policy=policies.get(key if gateway else str(slot)+'|BrandMeister|*',{})
+             selected=policy.get('minutes')
+             link_limit=selected*60 if type(selected) is int and 1<=selected<=1440 else limit
+             if policy.get('static') or policy.get('enabled',True) is False:continue
+             start=max(float(remember.get(key,now)),float(policy.get('updated',0)));start=min(start,now)
++            if native:
++                stamp=now if fusion.get('active') else fusion.get('last_rf',0)
++                if isinstance(stamp,(int,float)) and stamp<=now+5:start=max(start,min(stamp,now))
+             for row in rows:
++                if native:continue
+                 if str(row.get('source','')).lower()!='rf':continue
+                 if slot is not None and row.get('slot')!=slot:continue
+-                if not gateway and str(row.get('target',''))!=dest:continue
+                 stamp=now if row.get('active') else row.get('ended',row.get('started',0))
+                 if isinstance(stamp,(int,float)) and stamp<=now+5:start=max(start,min(stamp,now))
+             active[key]=start
+--- a/link_status.py
++++ b/link_status.py
+@@ -88,6 +88,9 @@
+                     matches=[k for k,v in entries.items() if link['name'].strip() in [s.strip() for s in v.split(' Â· ')]]
+                     if len(matches)==1:link['destination']=matches[0]
+                 link.update(mode='dmr2ysf' if p['ysf_route']=='crossmode' else 'ysf',slot=slot,unlink=True,kind='gateway')
++                try:monitor=json.loads(Path('/run/mmod/radio.json').read_text()) if p['ysf_route']=='native' else {}
++                except (OSError,ValueError):monitor={}
++                link['timer_supported']=p['ysf_route']=='crossmode' or (monitor.get('native_ysf',{}).get('supported',False) and time.time()-monitor.get('updated',0)<=5)
+                 group['links'].append(link);group['note']='Confirmed network links.'
+         except Exception:
+             if not group['links']:group['note']='Gateway link status unavailable.'
+--- a/network_access.py
++++ b/network_access.py
+@@ -16,7 +16,7 @@
+     # Stop obsolete socket listeners before binding every address on the port.
+     for name in names:
+         if (units/name).exists():
+-            subprocess.run(['systemctl','disable','--now',name] if name.endswith('.socket') else ['systemctl','stop',name],check=True)
++            subprocess.run(['systemctl','disable','--now',name],check=True)
+     data=re.sub(r'^MMOD_BIND=[^\r\n]*','MMOD_BIND=0.0.0.0',old,flags=re.M)
+     if not re.search(r'^MMOD_BIND=',data,re.M):data+='\nMMOD_BIND=0.0.0.0\n'
+     env.write_text(data)
+--- a/radio.py
++++ b/radio.py
+@@ -297,7 +297,7 @@
+ 
+ 
+ def main():
+-    seeded=False;lookup=Lookup();countries=Countries(Path("/etc/mmod/cty.dat"));log=None;next_config=0;signature=None
++    seeded=False;lookup=Lookup();countries=Countries(Path("/etc/mmod/cty.dat"));log=None;next_config=0;signature=None;fusion={}
+     while True:
+         try:
+             now=time.time()
+@@ -332,6 +332,12 @@
+                     except (OSError,ValueError,KeyError):snapshot['error']='Waiting for local log capture'
+             else:
+                 snapshot=events([],now);snapshot['error']='No radio log source found; check MMDVM logging settings'
++            from fusion_activity import snapshot as fusion_snapshot
++            fusion=fusion_snapshot(lines if log else [],now,fusion)
++            fusion['supported']=bool(log and not snapshot.get('error') and ini.get('System Fusion','Enable',fallback='0')=='1')
++            snapshot['native_ysf']=fusion
++            if fusion['supported'] and fusion['active']:
++                snapshot['slots'].append({'slot':None,'mode':'YSF','transmission':{'active':True,'caller':fusion.get('caller','')}})
+             retain_callers(snapshot,lookup)
+             preserve_history(snapshot,lookup)
+             atomic(LIVE/'radio.json',snapshot)
+--- a/static/links.js
++++ b/static/links.js
+@@ -15,7 +15,7 @@
+      if(signed&&policies!==null){const toggle=node('button',isStatic?'Make dynamic':'Make static','linked-unlink');toggle.onclick=async()=>{toggle.disabled=true;try{const result=await api('gateway-policy',{method:'POST',body:JSON.stringify({mode:link.mode,slot:slot.slot||2,family:link.family,destination:link.destination,static:!isStatic})});fill('linked-feedback',result.message);lastLinks='';await refreshLinks();}catch(e){fill('linked-feedback',e.message);}finally{toggle.disabled=false;}};row.append(toggle);}
+     }
+     if(signed&&link.unlink){const unlink=node('button','Unlink','linked-unlink');unlink.onclick=async()=>{if(!confirm('Unlink '+(link.destination||link.name)+(link.family==='BrandMeister'?'? This removes the static BrandMeister subscription.':'? This sends a native disconnect command to the shared YSF gateway.')))return;unlink.disabled=true;try{const result=await api('radio-control',{method:'POST',body:JSON.stringify({mode:link.mode,slot:link.mode==='ysf'?2:slot.slot,operation:'unlink',family:link.family,destination:link.destination,subscription_kind:link.kind||'static'})});fill('linked-feedback',result.message);}catch(e){fill('linked-feedback',e.message);}finally{unlink.disabled=false;}};row.append(unlink);}
+-    if(signed&&policies!==null&&link.kind==='gateway')row.append(linkTimerControl(link,slot,policies));
++    if(signed&&policies!==null&&link.kind==='gateway'&&(link.mode==='dmr2ysf'||(link.mode==='ysf'&&link.timer_supported))&&['YSF','FCS'].includes(link.family))row.append(linkTimerControl(link,slot,policies));
+     box.append(row);
+    }
+    if(signed&&slot.clear_dynamic){const clear=node('button','Clear dynamic TGs on TS'+slot.slot,'linked-unlink');clear.onclick=async()=>{if(!confirm('Clear ALL dynamic talkgroups on TS'+slot.slot+'? Static talkgroups are unchanged.'))return;clear.disabled=true;try{const result=await api('radio-control',{method:'POST',body:JSON.stringify({mode:'dmr',slot:slot.slot,operation:'clear_dynamic',family:'BrandMeister',destination:''})});fill('linked-feedback',result.message);}catch(e){fill('linked-feedback',e.message);}finally{clear.disabled=false;}};box.append(clear);}
+--- a/tests/test_full_stack_timer.py
++++ b/tests/test_full_stack_timer.py
+@@ -0,0 +1,28 @@
++import unittest
++from idle_links import due
++
++class FullStackTimerTests(unittest.TestCase):
++ def bm(self):
++  return {'slots':[{'slot':1,'clear_dynamic':True,'links':[
++   {'kind':'dynamic','mode':'dmr','family':'BrandMeister','destination':'91'},
++   {'kind':'dynamic','mode':'dmr','family':'BrandMeister','destination':'92'},
++   {'kind':'static','mode':'dmr','family':'BrandMeister','destination':'93'}]}]}
++ def test_any_rf_in_slot_resets_whole_slot(self):
++  remember={'1|BrandMeister|91':100,'1|BrandMeister|92':100}
++  for source,slot,count in [('RF',1,0),('network',1,1),('RF',2,1)]:
++   jobs,_=due(self.bm(),{'activity':[{'source':source,'slot':slot,'target':'999','ended':950}]},remember,1000,limit=300)
++   self.assertEqual(len(jobs),count)
++ def test_room_policies_are_independent(self):
++  rooms={'slots':[{'slot':2,'links':[{'kind':'gateway','mode':'dmr2ysf','family':'FCS','destination':room} for room in ('FCS00334','FCS00100')]}]}
++  keys=['2|FCS|FCS00334','2|FCS|FCS00100']
++  jobs,_=due(rooms,{},dict.fromkeys(keys,100),1000,policies={keys[0]:{'enabled':False},keys[1]:{'minutes':5}})
++  self.assertEqual([j['destination'] for j in jobs],['FCS00100'])
++ def test_unsupported_modes_never_expire(self):
++  for mode,family,kind in [('allstar','AllStar','dynamic'),('p25','P25','gateway'),('dmr','CBridge','dynamic')]:
++   key='2|'+family+'|91'
++   jobs,_=due({'slots':[{'slot':2,'clear_dynamic':True,'links':[{'kind':kind,'mode':mode,'family':family,'destination':'91'}]}]}, {}, {key:100},1000,limit=300)
++   self.assertFalse(jobs)
++ def test_static_and_disabled_slot_exempt(self):
++  for policy in ({'enabled':False},{'static':True}):
++   jobs,_=due(self.bm(),{}, {'1|BrandMeister|91':100,'1|BrandMeister|92':100},1000,limit=300,policies={'1|BrandMeister|*':policy})
++   self.assertFalse(jobs)
+--- a/tests/test_full_stack_timer_api.py
++++ b/tests/test_full_stack_timer_api.py
+@@ -0,0 +1,50 @@
++import importlib.util
++import json
++from pathlib import Path
++import tempfile
++import unittest
++from unittest.mock import patch
++from fastapi import FastAPI
++from fastapi.testclient import TestClient
++import v2_api
++import v2_radio
++
++class TimerAPITests(unittest.TestCase):
++ def setUp(self):
++  self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
++  self.state=Path(self.temp.name)
++  (self.state/'credentials.json').write_text(json.dumps({'username':'admin','salt':'11'*32,'hash':'unused'}))
++  app=FastAPI();v2_api.install_routes(app,self.state,self.state)
++  self.client=TestClient(app)
++  auth=patch('accounts.require',return_value={'username':'admin'});auth.start();self.addCleanup(auth.stop)
++ def test_global_off_and_minutes_persist(self):
++  for body in ({'enabled':False,'minutes':10},{'enabled':True,'minutes':27}):
++   response=self.client.post('/api/dynamic-timer',json=body)
++   self.assertEqual(response.status_code,200)
++   saved=json.loads((self.state/'dynamic-timer.json').read_text())
++   self.assertEqual(saved['enabled'],body['enabled']);self.assertEqual(saved['minutes'],body['minutes'])
++   self.assertEqual(self.client.get('/api/dynamic-timer').json()['enabled'],body['enabled'])
++ def test_unsupported_mode_rejected(self):
++  for mode,family in (('allstar','AllStar'),('p25','P25'),('dmr','CBridge')):
++   self.assertEqual(self.client.post('/api/gateway-policy',json={'mode':mode,'family':family,'destination':'91'}).status_code,400)
++ def test_invalid_minutes_rejected(self):
++  for minutes in (0,1441,True,'10'):
++   self.assertEqual(self.client.post('/api/dynamic-timer',json={'minutes':minutes}).status_code,422)
++ def test_native_timer_requires_current_rf_source(self):
++  body={'mode':'ysf','family':'FCS','destination':'FCS00334','enabled':True,'minutes':10}
++  self.assertEqual(self.client.post('/api/gateway-policy',json=body).status_code,400)
++ @unittest.skipUnless(importlib.util.find_spec('fcntl'),'Per-room writes require Linux file locking')
++ def test_room_and_bm_slot_settings_roundtrip(self):
++  for body,key in (({'mode':'dmr2ysf','family':'FCS','destination':'FCS00334','slot':2,'enabled':False,'minutes':25},'2|FCS|FCS00334'),({'mode':'dmr','family':'BrandMeister','destination':'*','slot':1,'enabled':True,'minutes':7},'1|BrandMeister|*')):
++   self.assertEqual(self.client.post('/api/gateway-policy',json=body).status_code,200)
++   saved=self.client.get('/api/gateway-policy').json()[key]
++   self.assertEqual(saved['enabled'],body['enabled']);self.assertEqual(saved['minutes'],body['minutes'])
++
++class QueuedTimerTests(unittest.TestCase):
++ def test_off_static_or_changed_policy_cancels_queued_request(self):
++  job={'mode':'dmr2ysf','operation':'unlink','slot':2,'family':'FCS','destination':'FCS00334','username':'auto-timeout','created':100}
++  for global_policy,local_policy in (({'enabled':False},{}),({'updated':101},{}),({}, {'static':True}),({}, {'enabled':False}),({}, {'updated':101})):
++   def read(path,*args,**kwargs):
++    return json.dumps(global_policy if path.name=='dynamic-timer.json' else {'2|FCS|FCS00334':local_policy})
++   with patch('v2_radio.validate'),patch.object(Path,'exists',return_value=True),patch.object(Path,'read_text',read),patch('v2_radio.mqtt_exchange') as mqtt:
++    self.assertIn('cancelled',v2_radio.execute(job));mqtt.assert_not_called()
+--- a/tests/test_fusion_activity.py
++++ b/tests/test_fusion_activity.py
+@@ -0,0 +1,20 @@
++import datetime
++import unittest
++from fusion_activity import snapshot
++from idle_links import due
++
++class FusionRFTests(unittest.TestCase):
++ def test_rf_start_end_and_network_exemption(self):
++  now=datetime.datetime(2026,10,7,0,0,10,tzinfo=datetime.timezone.utc).timestamp()
++  lines=['M: 2026-10-07 00:00:01.000 YSF, received RF header from     N3DMC to DG-ID 0',
++         'M: 2026-10-07 00:00:04.000 YSF, received RF end of transmission from     N3DMC to DG-ID 0, 3.0 seconds']
++  state=snapshot(lines,now);self.assertFalse(state['active']);self.assertEqual(state['last_rf'],now-6)
++  network='M: 2026-10-07 00:00:09.000 YSF, received network end of transmission from N3DMC to DG-ID 0 at N3DMC, 2.0 seconds'
++  self.assertEqual(snapshot([network],now,state)['last_rf'],state['last_rf'])
++  self.assertTrue(snapshot(lines[:1],now)['active'])
++ def test_native_timer_uses_only_fusion_rf_and_requires_source(self):
++  links={'slots':[{'slot':None,'links':[{'kind':'gateway','mode':'ysf','family':'FCS','destination':'FCS00334'}]}]}
++  for supported,last_rf,active,count in [(False,100,False,0),(True,100,False,1),(True,950,False,0),(True,100,True,0)]:
++   monitor={'native_ysf':{'supported':supported,'last_rf':last_rf,'active':active},'activity':[{'source':'RF','slot':1,'ended':999}]}
++   jobs,_=due(links,monitor,{'2|FCS|FCS00334':100},1000,limit=300)
++   self.assertEqual(len(jobs),count)
+--- a/v2_api.py
++++ b/v2_api.py
+@@ -51,6 +51,11 @@
+             raise HTTPException(400,'Only YSF/FCS gateway policy is supported')
+         pattern=r'FCS[0-9]{5}' if body.family=='FCS' else r'[0-9]{5}'
+         if not bm_slot and not re.fullmatch(pattern,body.destination):raise HTTPException(400,'Invalid destination')
++        if body.mode=='ysf' and ('enabled' in body.model_fields_set or 'minutes' in body.model_fields_set):
++            try:monitor=json.loads((live/'radio.json').read_text())
++            except (OSError,ValueError):monitor={}
++            if not monitor.get('native_ysf',{}).get('supported') or time.time()-monitor.get('updated',0)>5:
++                raise HTTPException(400,'Native Fusion timer requires a current compatible RF log source')
+         key='|'.join([str(body.slot),body.family,body.destination])
+         import fcntl
+         with (state/'gateway-policy.lock').open('a') as lock:

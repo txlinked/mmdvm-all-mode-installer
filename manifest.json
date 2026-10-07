@@ -1,10 +1,22 @@
 {
-  "version": "0.1.0-rc3",
+  "version": "0.1.0-rc4",
   "target": "debian13-amd64",
   "dashboard": {
     "repo": "txlinked/mmod",
-    "commit": "0e301ec01af87fcd4ad04aa65171234f1ed8616a",
-    "sha256": "ec2b94ab4faffda46201eafe60fb1a1630f376ce106fe1f41d7d859d9f008fbf"
+    "commit": "5c838d78c59652935a31b2cdbdd428c1cd033e8d",
+    "sha256": "d8062b124801fe0e5465af5a9bceb27b43eea53f5415cf534277c8e431393888",
+    "bundled_changes": [
+      "fusion_activity.py",
+      "idle_links.py",
+      "link_status.py",
+      "network_access.py",
+      "radio.py",
+      "static/links.js",
+      "tests/test_full_stack_timer.py",
+      "tests/test_full_stack_timer_api.py",
+      "tests/test_fusion_activity.py",
+      "v2_api.py"
+    ]
   },
   "upstream": [
     {

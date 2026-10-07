@@ -144,13 +144,25 @@ def plan(root):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--room-timeout', type=int, choices=range(0,1441), metavar='MINUTES', help='RF inactivity timeout: 0 disables, 1–1440 minutes enables; default 10, existing value preserved')
     ap.add_argument('--apply', action='store_true', help='Back up and save the reviewed routing')
     ap.add_argument('--root', type=Path, default=Path('/'), help=argparse.SUPPRESS)
     args = ap.parse_args()
     cfg, files, station_id, callsign = plan(args.root)
     print(f'{callsign} / {station_id}: TS2 TG7100334 -> converter TG100334 -> FCS00334; reverse TG mapping enabled.')
-    print('Reserve TS2 TG7000000–7999998 for cross-mode; retain other network credentials and CBridge routes.')
-    print('Room unlinks after 10 minutes without local RF; converter stays running.')
+    print('Reserve TS2 TG7000000â€“7999998 for cross-mode; retain other network credentials and CBridge routes.')
+    timer_path = args.root / 'etc/mmod-radio/room-timeout.env'
+    policy_path = args.root / 'var/lib/mmod/state/gateway-policy.json'
+    policy = json.loads(policy_path.read_text()) if policy_path.exists() else {}
+    minutes = args.room_timeout
+    if minutes is not None:
+        selected = policy.get('2|FCS|FCS00334', {})
+        policy['2|FCS|FCS00334'] = {**selected, 'enabled': minutes > 0,
+                                  'updated': datetime.datetime.now().timestamp()}
+        if minutes > 0: policy['2|FCS|FCS00334']['minutes'] = minutes
+        print('Dashboard FCS00334 timer: ' + (str(minutes)+' RF inactivity minutes' if minutes else 'Off'))
+    else:
+        print('Dashboard timer selections preserved; converter has no independent timer.')
     if not args.apply:
         print('Review only. Run again with --apply to save; no services restarted.')
         return
@@ -166,6 +178,16 @@ def main():
             raise ValueError('Existing YSF directory is invalid; no settings changed')
     backup = args.root / 'var/backups' / ('mmod-crossmode-' + datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%f'))
     backup.mkdir(parents=True, mode=0o700)
+    if timer_path.exists(): shutil.copy2(timer_path, backup / timer_path.name)
+    timer_path.write_text('# Dashboard exclusively owns inactivity timers.\nMMOD_ROOM_IDLE_MINUTES=0\n')
+    if minutes is not None:
+        policy_path.parent.mkdir(parents=True, exist_ok=True)
+        if policy_path.exists(): shutil.copy2(policy_path, backup / policy_path.name)
+        policy_path.write_text(json.dumps(policy)+'\n')
+        policy_path.chmod(0o600)
+        if args.root == Path('/') and os.name == 'posix':
+            shutil.chown(policy_path, user='mmod', group='mmod')
+    timer_path.chmod(0o644)
     if hosts is not None or not state.exists():
         if state.exists():
             shutil.copy2(state, backup / 'YSFHosts.json')

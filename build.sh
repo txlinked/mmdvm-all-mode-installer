@@ -3,13 +3,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 [[ $(dpkg --print-architecture) == amd64 ]] || { echo 'Build requires amd64'; exit 1; }
-version=${1:-0.1.0-rc3}
+version=${1:-0.1.0-rc4}
 [[ $version =~ ^[0-9A-Za-z.+-]+$ ]] || exit 1
 stage="$PWD/work/build-$version"
 mkdir -p "$stage/src" "$stage/bundle/bin" "$stage/bundle/config" "$stage/bundle/data" "$stage/bundle/licenses" dist
-cp install.sh manifest.json "$stage/bundle/"
+cp install.sh manifest.json VERSION "$stage/bundle/"
 cp accept-idle-dashboard.py "$stage/bundle/"
 cp configure-dmr2ysf.py "$stage/bundle/"
+cp configure-dashboard-timer.py "$stage/bundle/"
 cp -a patches "$stage/bundle/"
 cp probe-modem.py "$stage/bundle/"
 cp STATION-SETUP.md README.md RELEASE-NOTES.md LICENSE "$stage/bundle/"
@@ -17,6 +18,7 @@ cp vendor/mmod-source.tar.gz "$stage/bundle/"
 python3 - <<'PY'
 import hashlib,json,pathlib
 manifest=json.load(open('manifest.json'))
+assert manifest['version']==pathlib.Path('VERSION').read_text().strip(), 'Release version mismatch'
 assert hashlib.sha256(pathlib.Path('vendor/mmod-source.tar.gz').read_bytes()).hexdigest()==manifest['dashboard']['sha256'], 'Dashboard archive checksum mismatch'
 PY
 python3 - "$stage" <<'PY'

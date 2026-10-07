@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 if [[ ${1:-} == --help ]]; then
-  echo 'sudo bash install.sh --bind LOCAL_IPV4 [--port 8000] [--site NAME] [--ini EXISTING_INI]'
+  echo 'sudo bash install.sh [--port 8000] [--site NAME] [--ini EXISTING_INI]'
   echo 'Debian 13 amd64. Radio services remain stopped until station setup is complete.'
   exit 0
 fi
@@ -14,24 +14,23 @@ fi
   echo 'This release requires Debian 13 amd64 (Dell Wyse 3040 or other x86_64 PC).'; exit 1;
 }
 sha256sum --check --strict SHA256SUMS
-bind= port=8000 site='MMOD Test Repeater' ini=
+dashboard_existing=0
+[[ ! -e /etc/mmod/config.json && ! -e /opt/mmod/VERSION ]] || dashboard_existing=1
+bind=0.0.0.0 port=8000 site='MMOD Test Repeater' ini=
 while (($#)); do
   case $1 in
-    --bind) bind=$2;; --port) port=$2;; --site) site=$2;; --ini) ini=$2;;
+    --bind) echo 'Dashboard uses all IPv4 interfaces; --bind is ignored.' >&2;; --port) port=$2;; --site) site=$2;; --ini) ini=$2;;
     *) echo "Unknown option: $1" >&2; exit 1;;
   esac
   shift 2
 done
-[[ -n $bind ]] || { echo 'Supply --bind with a local IPv4 address'; exit 1; }
 if ! command -v python3 >/dev/null || ! command -v ip >/dev/null; then
   apt-get update
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 iproute2
 fi
 python3 - "$bind" "$port" "$ini" <<'PY'
 import ipaddress,sys,json,subprocess,pathlib
-a=ipaddress.IPv4Address(sys.argv[1]);p=int(sys.argv[2]);assert not a.is_unspecified and not a.is_multicast and 1024<=p<=65535
-interfaces=json.loads(subprocess.check_output(['ip','-j','-4','addr'],text=True))
-assert any(x.get('local')==str(a) for i in interfaces for x in i.get('addr_info',[])), 'Bind IP is not local'
+a=ipaddress.IPv4Address(sys.argv[1]);p=int(sys.argv[2]);assert a.is_unspecified and 1024<=p<=65535
 if sys.argv[3]:assert pathlib.Path(sys.argv[3]).is_file() and pathlib.Path(sys.argv[3]).is_absolute()
 PY
 # Refuse to replace a running radio stack or existing unmanaged unit.
@@ -99,7 +98,7 @@ for p in manifest['programs']:
     if unit.exists():shutil.copy2(unit,pathlib.Path(os.environ['MMOD_STACK_BACKUP'])/unit.name)
     command='/opt/mmod-radio/bin/'+p['name']+' '+str(target)
     if p['name']=='ircddbgatewayd':command='/opt/mmod-radio/bin/ircddbgatewayd -foreground -confdir /etc/mmod-radio -logdir /var/log/mmod-radio'
-    unit.write_text('[Unit]\n# Managed by MMOD stack installer\nDescription=MMOD '+p['name']+'\nAfter=network-online.target mosquitto.service\nWants=network-online.target\nConditionPathExists=/etc/mmod-radio/station-ready\n\n[Service]\nType=simple\nUser=mmdvm\nGroup=mmdvm\nSupplementaryGroups=dialout\nWorkingDirectory=/opt/mmod-radio/data/'+p['name']+'\nExecStart='+command+'\nRestart=on-failure\nRestartSec=5\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nReadWritePaths=/var/log/mmod-radio /var/lib/mmod-radio\nUMask=0027\n\n[Install]\nWantedBy=multi-user.target\n')
+    unit.write_text('[Unit]\n# Managed by MMOD stack installer\nDescription=MMOD '+p['name']+'\nAfter=network-online.target mosquitto.service\nWants=network-online.target\nConditionPathExists=/etc/mmod-radio/station-ready\n\n[Service]\nType=simple\nEnvironmentFile=-/etc/mmod-radio/room-timeout.env\nUser=mmdvm\nGroup=mmdvm\nSupplementaryGroups=dialout\nWorkingDirectory=/opt/mmod-radio/data/'+p['name']+'\nExecStart='+command+'\nRestart=on-failure\nRestartSec=5\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nReadWritePaths=/var/log/mmod-radio /var/lib/mmod-radio\nUMask=0027\n\n[Install]\nWantedBy=multi-user.target\n')
 PY
 # Current YSFGateway opens its JSON directory read/write, even when loading.
 if [[ ! -e /var/lib/mmod-radio/YSFHosts.json ]]; then
@@ -111,26 +110,32 @@ systemctl daemon-reload
 systemd-analyze verify /etc/systemd/system/{mmdvmhost,dmrgateway,ysfgateway,dgidgateway,p25gateway,nxdngateway,m17gateway,dapnetgateway,ircddbgateway,dmr2ysf}.service
 stage=$(mktemp -d /tmp/mmod-dashboard.XXXXXXXX)
 proxy_restore=0
+proxy_units=()
 cleanup_dashboard_stage() {
-  if ((proxy_restore)); then systemctl start mmod-network.socket || true; fi
+  if ((proxy_restore)); then
+    for unit in "${proxy_units[@]}"; do systemctl start "$unit" || true; done
+  fi
   case "$stage" in /tmp/mmod-dashboard.*) rm -rf -- "$stage";; esac
 }
 trap cleanup_dashboard_stage EXIT
 tar -xzf mmod-source.tar.gz -C "$stage"
-# Run the original MMOD installer, without modifying dashboard source or assets.
+# Run the bundled full-stack dashboard installer.
 [[ -n $ini ]] || ini=/etc/mmod-radio/MMDVM.ini
 # Upstream's port check sees its own secondary-IP proxy as a conflicting process.
 # Briefly stop only that dashboard socket and restore it on every exit path.
-if systemctl is-active --quiet mmod-network.socket || systemctl is-active --quiet mmod-network.service; then
+for unit in mmod-network.socket mmod-44net.socket mmod-network.service mmod-44net.service; do
+  if systemctl is-active --quiet "$unit"; then proxy_units+=("$unit"); fi
+done
+if ((${#proxy_units[@]})); then
   proxy_restore=1
-  systemctl stop mmod-network.service mmod-network.socket
+  systemctl stop "${proxy_units[@]}"
 fi
 if bash "$stage/mmod/install.sh" --bind "$bind" --port "$port" --site "$site" --ini "$ini" --host-service mmdvmhost.service 2>&1 | tee "$backup/dashboard-install.log"; then
   echo 'Original dashboard installer passed.'
 else
   # Upstream requires an active radio log even on a fresh dashboard installation.
   # Accept only its exact no-log postcheck after verifying source, UI and configs.
-  python3 accept-idle-dashboard.py "$backup/dashboard-install.log" "$stage/mmod" "http://$bind:$port"
+  python3 accept-idle-dashboard.py "$backup/dashboard-install.log" "$stage/mmod" "http://127.0.0.1:$port"
   python3 /opt/mmod/link_status.py --prepare-access
   systemctl daemon-reload
   systemctl enable --now mmod-updates.timer
@@ -142,8 +147,18 @@ c['services']=list(dict.fromkeys(c['services']+[x['service']+'.service' for x in
 c['backup_files']=list(dict.fromkeys(c['backup_files']+['/etc/mmod-radio/'+x['config_name'] for x in m['programs']]))
 p.write_text(json.dumps(c,indent=2)+'\n')
 PY
+# Dashboard owns the room timer so per-link Off/static choices cannot be
+# overridden by the converter's independent fallback timer.
+if [[ -f /etc/mmod-radio/room-timeout.env ]]; then
+  cp -a /etc/mmod-radio/room-timeout.env "$backup/room-timeout.env"
+fi
+printf 'MMOD_ROOM_IDLE_MINUTES=0\n' > /etc/mmod-radio/room-timeout.env
+chmod 644 /etc/mmod-radio/room-timeout.env
+python3 configure-dashboard-timer.py --existing "$dashboard_existing"
+python3 /opt/mmod/network_access.py
+proxy_restore=0
 systemctl restart mmod mmod-collector.service
-echo "Dashboard installed: http://$bind:$port"
+echo "Dashboard installed: http://<server-IP>:$port (all IPv4 interfaces)"
 echo "Radio binaries installed; station configuration required. Backup: $backup"
 echo 'DMR to Texas Nexus: review sudo mmod-configure-dmr2ysf, then run with --apply.'
 echo 'See STATION-SETUP.md before creating /etc/mmod-radio/station-ready.'
