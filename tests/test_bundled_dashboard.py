@@ -18,7 +18,7 @@ class BundledDashboardTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as folder:
    with tarfile.open(archive) as source:source.extractall(folder,filter='data')
    dashboard=Path(folder)/'mmod'
-   for pattern in ('test_timer_choice.py','test_full_stack_timer.py'):
+   for pattern in ('test_timer_choice.py','test_full_stack_timer.py','test_fusion_activity.py'):
     subprocess.run([sys.executable,'-m','unittest','discover','-s','tests','-p',pattern,'-v'],cwd=dashboard,check=True)
    subprocess.run([sys.executable,'-m','unittest','discover','-s','tests','-p','test_network_access.py','-v'],cwd=dashboard,check=True)
    if os.environ.get('MMOD_TEST_API')=='1':
