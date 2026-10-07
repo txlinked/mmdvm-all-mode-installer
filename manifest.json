@@ -4,13 +4,18 @@
   "dashboard": {
     "repo": "txlinked/mmod",
     "commit": "5c838d78c59652935a31b2cdbdd428c1cd033e8d",
-    "sha256": "8a416a9c6a728eb429090eaeb2bd3c9343fccd36b6c22f3264ff1def492101b1",
+    "sha256": "d8062b124801fe0e5465af5a9bceb27b43eea53f5415cf534277c8e431393888",
     "bundled_changes": [
+      "fusion_activity.py",
       "idle_links.py",
+      "link_status.py",
       "network_access.py",
+      "radio.py",
       "static/links.js",
       "tests/test_full_stack_timer.py",
-      "tests/test_full_stack_timer_api.py"
+      "tests/test_full_stack_timer_api.py",
+      "tests/test_fusion_activity.py",
+      "v2_api.py"
     ]
   },
   "upstream": [

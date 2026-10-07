@@ -8,6 +8,7 @@ Local checks passed on Windows with Python 3.12:
 - Fresh dashboard default is enabled at 10 minutes. Updates retain saved policy byte-for-byte or preserve the legacy implicit 15-minute default.
 - Bundled dashboard checksum and extraction.
 - RF-only room expiry, independent room settings, whole-timeslot BrandMeister RF activity, other-slot isolation, and Static/Off/unsupported-mode exemptions.
+- Native Fusion RF header/end parsing, network-traffic exclusion, activity-source gating and independence from DMR RF traffic. Existing DMR event parsing checks pass.
 - Global timer API persistence, input validation, unsupported-mode rejection and queued timeout cancellation after Off/Static/policy changes.
 - Network migration preserves the dashboard port and disables old proxy units; no local-interface enumeration is required for wildcard binding.
 - The revised converter patch applies to manifest-pinned sources. Linked-room JavaScript passes Node syntax checking.
