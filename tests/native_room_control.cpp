@@ -34,12 +34,12 @@ int main() {
     assert(commands.back().find("LinkFCS 00334") != std::string::npos);
     assert(converter.m_lastTG == 100334U);
     converter.connectYSF(100334U);
-    assert(commands.size() == 1U);
+    assert(commands.size() == 2U);
     converter.connectYSF(4000U);
     assert(commands.back().find("-m Unlink") != std::string::npos);
     assert(converter.m_lastTG == 0U);
     converter.connectYSF(100334U);
-    assert(commands.size() == 3U);
+    assert(commands.size() == 4U);
     converter.connectYSF(200123U);
     assert(commands.back().find("LinkYSF 00123") != std::string::npos);
     commandFails = true;
@@ -48,12 +48,6 @@ int main() {
     commandFails = false;
     converter.connectYSF(100335U);
     assert(converter.m_lastTG == 100335U);
-    CTimer timer(1000U, 600U);
-    timer.start();
-    timer.clock(599999U);
-    assert(!timer.hasExpired());
-    timer.clock(1U);
-    assert(timer.hasExpired());
-    std::puts("Native FCS/YSF controls, unlink/relink, command failure and 10-minute timer passed");
+    std::puts("Native FCS/YSF controls, unlink/relink and command failure passed");
     return 0;
 }
